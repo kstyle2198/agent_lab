@@ -1,12 +1,9 @@
 from typing import Any
 import asyncio
 import bs4
-import time
 import uvicorn
 import random
-from langchain import hub
 from langchain_chroma import Chroma
-from langchain_ollama.chat_models import ChatOllama
 from langchain_groq import ChatGroq
 from langchain_ollama import OllamaEmbeddings
 from langchain_core.prompts import ChatPromptTemplate
@@ -18,7 +15,6 @@ from langchain_text_splitters import RecursiveCharacterTextSplitter
 from langchain_core.callbacks.manager import AsyncCallbackManager
 from langchain.callbacks.base import AsyncCallbackHandler
 from fastapi import WebSocket, FastAPI, WebSocketDisconnect
-from fastapi.responses import HTMLResponse
 
 from dotenv import load_dotenv
 load_dotenv()
@@ -59,6 +55,21 @@ def format_docs(docs):
     return "\n\n".join(doc.page_content for doc in docs)
 
 
+@app.get("/predict")
+def predict(query: str):
+    llm = ChatGroq(temperature=0, 
+                   model_name= "llama-3.2-11b-text-preview",
+                   )
+
+    rag_chain = (
+            {"context": retriever | format_docs, "question": RunnablePassthrough()}
+            | prompt
+            | llm
+            | StrOutputParser()
+    )
+    return rag_chain.invoke(query)
+
+
 class LLMCallbackHandler(AsyncCallbackHandler):
     def __init__(self, websocket):
         self.websocket = websocket
@@ -84,29 +95,12 @@ async def websocket_endpoint(websocket: WebSocket):
             | prompt
             | llm
             | StrOutputParser()
-    )
+            )
 
     while True:
         query = await websocket.receive_text()
         response  = await rag_chain.ainvoke(query)
-        await websocket.send_json(response)
-
-
-
-@app.get("/predict")
-def predict(query: str):
-    llm = ChatGroq(temperature=0, 
-                   model_name= "llama-3.2-11b-text-preview",
-                   )
-
-    rag_chain = (
-            {"context": retriever | format_docs, "question": RunnablePassthrough()}
-            | prompt
-            | llm
-            | StrOutputParser()
-    )
-    return rag_chain.invoke(query)
-
+        await websocket.send_text(f"Message received: {response}")
 
 @app.websocket("/ws/random-number")
 async def websocket_endpoint(websocket: WebSocket):
