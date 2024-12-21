@@ -3,4 +3,6 @@
 poetry.lock
 pyproject.toml
 db
+data
 __pycache__
+창고
